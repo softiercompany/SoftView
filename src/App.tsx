@@ -17,6 +17,7 @@ import VideoPlayer from './components/VideoPlayer';
 import PremiumModal from './components/PremiumModal';
 import WelcomeLanding from './components/WelcomeLanding';
 import KeypadTourModal from './components/KeypadTourModal';
+import CookieBanner from './components/CookieBanner';
 import { initialVideos, learningPaths } from './data';
 import { Video, UserProfile, LearningPath } from './types';
 import { Sparkles, CheckCircle2 } from 'lucide-react';
@@ -489,6 +490,9 @@ export default function App() {
         isOpen={showKeypadTourModal}
         onClose={() => setShowKeypadTourModal(false)}
       />
+
+      {/* COOKIE & PRIVACY AGREEMENT BADGE/BANNER */}
+      <CookieBanner />
     </div>
   );
 }

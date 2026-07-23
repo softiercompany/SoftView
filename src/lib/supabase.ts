@@ -160,7 +160,11 @@ export async function fetchSupabaseVideos(): Promise<Video[]> {
       .order('created_at', { ascending: false });
 
     if (error || !data) {
-      console.warn('Supabase fetch videos error:', error?.message);
+      if (error?.code === 'PGRST301' || error?.message?.includes('schema cache') || error?.message?.includes('does not exist') || error?.message?.includes('404')) {
+        console.warn('Supabase Notice: Table "public.videos" not found in Supabase database. Please run the SQL migration script provided in README.md or Settings to create the tables.');
+      } else {
+        console.warn('Supabase fetch videos error:', error?.message);
+      }
       return [];
     }
 
@@ -250,6 +254,9 @@ export async function fetchSupabaseLearningPaths(): Promise<LearningPath[]> {
       .order('created_at', { ascending: false });
 
     if (error || !data) {
+      if (error?.code === 'PGRST301' || error?.message?.includes('schema cache') || error?.message?.includes('does not exist') || error?.message?.includes('404')) {
+        console.warn('Supabase Notice: Table "public.learning_paths" not found in Supabase database. Run SQL migration script to enable learning paths database sync.');
+      }
       return [];
     }
 

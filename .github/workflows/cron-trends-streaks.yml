@@ -1,0 +1,52 @@
+name: Daily Trends & Streaks Sync Cron
+
+on:
+  schedule:
+    # Run twice daily at 00:00 and 12:00 UTC
+    - cron: '0 0,12 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Sync Action to execute'
+        required: true
+        default: 'daily-sync'
+        type: choice
+        options:
+          - daily-sync
+          - reload-trends
+          - update-streaks
+
+jobs:
+  run-sync-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger SoftView Daily Sync Cron
+        run: |
+          APP_URL="${{ secrets.APP_URL }}"
+          if [ -z "$APP_URL" ]; then
+            APP_URL="https://softview.vercel.app"
+          fi
+          
+          ACTION="${{ inputs.action }}"
+          if [ -z "$ACTION" ]; then
+            ACTION="daily-sync"
+          fi
+
+          echo "🚀 Executing SoftView Cron Action [$ACTION] on target $APP_URL..."
+          
+          CRON_SECRET="${{ secrets.CRON_SECRET }}"
+          
+          RESPONSE=$(curl -s -X POST "$APP_URL/api/cron/$ACTION" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "x-cron-secret: $CRON_SECRET")
+
+          echo "📡 Response from SoftView platform:"
+          echo "$RESPONSE"
+
+          if echo "$RESPONSE" | grep -q '"success":true'; then
+            echo "✅ SoftView $ACTION Cron completed successfully!"
+          else
+            echo "⚠️ Warning or error in SoftView cron response!"
+            exit 1
+          fi
