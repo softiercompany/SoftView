@@ -44,6 +44,7 @@ export default function WelcomeLanding({ onSignIn }: WelcomeLandingProps) {
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isLoggingInGoogle, setIsLoggingInGoogle] = useState(false);
+  const [logoError, setLogoError] = useState(false);
 
   const handleGoogleSignIn = async () => {
     if (isLoggingInGoogle) return;
@@ -113,14 +114,25 @@ export default function WelcomeLanding({ onSignIn }: WelcomeLandingProps) {
       <header className="w-full max-w-7xl mx-auto px-6 py-5 flex items-center justify-between z-20">
         {/* SoftView Logo */}
         <div className="flex items-center gap-3 cursor-pointer group">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-400 p-0.5 shadow-lg shadow-indigo-500/30 group-hover:scale-105 transition-transform flex items-center justify-center">
-            <div className="w-full h-full bg-[#05050d] rounded-[10px] flex items-center justify-center">
-              <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-cyan-400 border-b-[6px] border-b-transparent ml-0.5" />
+          {!logoError ? (
+            <img
+              src="/softview_logo.png"
+              alt="SoftView Logo"
+              onError={() => setLogoError(true)}
+              className="h-10 object-contain group-hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-400 p-0.5 shadow-lg shadow-indigo-500/30 group-hover:scale-105 transition-transform flex items-center justify-center">
+                <div className="w-full h-full bg-[#05050d] rounded-[10px] flex items-center justify-center">
+                  <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-cyan-400 border-b-[6px] border-b-transparent ml-0.5" />
+                </div>
+              </div>
+              <span className="text-2xl font-black tracking-tight text-white font-sans">
+                Soft<span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400">View</span>
+              </span>
             </div>
-          </div>
-          <span className="text-2xl font-black tracking-tight text-white font-sans">
-            Soft<span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400">View</span>
-          </span>
+          )}
         </div>
 
         {/* Right Header Options: Language & Theme Toggle */}

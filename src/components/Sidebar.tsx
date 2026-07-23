@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { Home, Compass, Sparkles, BookOpen, Gamepad2, Cpu, Clapperboard, Radio, Library, Route, Settings, Crown } from 'lucide-react';
 import { UserProfile } from '../types';
 
@@ -9,6 +10,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeTab, setActiveTab, user, onOpenPremium }: SidebarProps) {
+  const [logoError, setLogoError] = useState(false);
   const menuItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'discover', label: 'Discover', icon: Compass },
@@ -29,14 +31,25 @@ export default function Sidebar({ activeTab, setActiveTab, user, onOpenPremium }
     <aside id="sidebar-container" className="w-64 shrink-0 bg-[#070610] border-r border-[#1a163a]/50 h-screen flex flex-col justify-between overflow-y-auto select-none">
       {/* Brand Logo Section */}
       <div id="brand-logo-section" className="p-6 pb-2 flex items-center gap-2.5">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-950/40">
-          <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        </div>
-        <span className="text-xl font-bold tracking-tight text-white flex items-center">
-          Soft<span className="text-purple-400">View</span>
-        </span>
+        {!logoError ? (
+          <img
+            src="/softview_logo.png"
+            alt="SoftView Logo"
+            onError={() => setLogoError(true)}
+            className="h-9 max-w-full object-contain"
+          />
+        ) : (
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-950/40">
+              <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+            <span className="text-xl font-bold tracking-tight text-white flex items-center">
+              Soft<span className="text-purple-400">View</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Navigation List */}

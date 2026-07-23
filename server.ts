@@ -878,9 +878,9 @@ app.get("/api/auth/google", (req, res) => {
   const appUrl = process.env.APP_URL || `${protocol}://${host}`;
   const redirectUri = `${appUrl}/api/auth/google/callback`;
 
-  const googleClientId = process.env.GOOGLE_CLIENT_ID;
+  const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
 
-  if (googleClientId && googleClientId !== "your-google-client-id") {
+  if (googleClientId && googleClientId !== "" && googleClientId !== "your-google-client-id") {
     const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     googleAuthUrl.searchParams.set("client_id", googleClientId);
     googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
@@ -923,10 +923,10 @@ app.get("/api/auth/google/callback", async (req, res) => {
   };
   let idToken = '';
 
-  const googleClientId = process.env.GOOGLE_CLIENT_ID;
-  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
 
-  if (code && code !== 'softview_custom_demo_code' && googleClientId && googleClientSecret && googleClientId !== 'your-google-client-id') {
+  if (code && code !== 'softview_custom_demo_code' && googleClientId && googleClientSecret && googleClientId !== '' && googleClientSecret !== '' && googleClientId !== 'your-google-client-id') {
     try {
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
