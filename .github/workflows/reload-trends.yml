@@ -1,0 +1,31 @@
+name: Reload Daily Video Trends Cron
+
+on:
+  schedule:
+    # Runs daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  reload-trends:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Daily Trends Reload API
+        run: |
+          echo "Triggering SoftView Daily Trends Refresh Cron..."
+          APP_DOMAIN="${{ secrets.APP_DOMAIN || 'https://softview.vercel.app' }}"
+          CRON_SECRET="${{ secrets.CRON_SECRET }}"
+          
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "$APP_DOMAIN/api/cron/reload-trends" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json")
+            
+          echo "Response Output:"
+          echo "$RESPONSE"
+          
+          if echo "$RESPONSE" | grep -q "HTTP_STATUS:200"; then
+            echo "✅ Daily Trends Reloaded Successfully!"
+          else
+            echo "⚠️ Non-200 HTTP response received during trends cron execution."
+          fi

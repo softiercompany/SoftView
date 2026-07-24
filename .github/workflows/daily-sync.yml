@@ -1,0 +1,31 @@
+name: Master Daily Sync Cron
+
+on:
+  schedule:
+    # Runs daily at 01:00 UTC
+    - cron: '0 1 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  daily-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Master Daily Sync API
+        run: |
+          echo "Triggering SoftView Master Daily Sync Cron..."
+          APP_DOMAIN="${{ secrets.APP_DOMAIN || 'https://softview.vercel.app' }}"
+          CRON_SECRET="${{ secrets.CRON_SECRET }}"
+          
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "$APP_DOMAIN/api/cron/daily-sync" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json")
+            
+          echo "Response Output:"
+          echo "$RESPONSE"
+          
+          if echo "$RESPONSE" | grep -q "HTTP_STATUS:200"; then
+            echo "✅ Master Sync Completed Successfully!"
+          else
+            echo "⚠️ Non-200 HTTP response received during master sync execution."
+          fi

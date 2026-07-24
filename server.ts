@@ -1206,15 +1206,255 @@ const handleGoogleCallback = async (req: express.Request, res: express.Response)
 app.get(["/api/auth/google", "/auth/google", "/api/auth/google/"], handleGoogleStart);
 app.get(["/api/auth/google/callback", "/auth/google/callback", "/api/auth/google/callback/"], handleGoogleCallback);
 
-// Universal fallback middleware for OAuth routes to catch any environment path variations (e.g., Vercel rewrites)
+// ==========================================
+// GITHUB OAUTH FLOW ENDPOINTS
+// ==========================================
+const handleGithubStart = (req: express.Request, res: express.Response) => {
+  const host = req.get('host') || 'softview.vercel.app';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const appUrl = process.env.APP_URL || `${protocol}://${host}`;
+  const redirectUri = process.env.GITHUB_REDIRECT_URI?.trim() || `${appUrl}/api/auth/github/callback`;
+  const ghClientId = process.env.GITHUB_CLIENT_ID?.trim();
+
+  if (ghClientId && ghClientId !== "" && ghClientId !== "your-github-client-id") {
+    const ghAuthUrl = new URL("https://github.com/login/oauth/authorize");
+    ghAuthUrl.searchParams.set("client_id", ghClientId);
+    ghAuthUrl.searchParams.set("redirect_uri", redirectUri);
+    ghAuthUrl.searchParams.set("scope", "read:user user:email");
+
+    if (req.query.mode === 'json') {
+      return res.json({ success: true, url: ghAuthUrl.toString() });
+    }
+    return res.redirect(ghAuthUrl.toString());
+  }
+
+  const demoCallbackUrl = `${appUrl}/api/auth/github/callback?code=softview_custom_github_demo_code`;
+  if (req.query.mode === 'json') {
+    return res.json({ success: true, url: demoCallbackUrl });
+  }
+  return res.redirect(demoCallbackUrl);
+};
+
+const handleGithubCallback = async (req: express.Request, res: express.Response) => {
+  const host = req.get('host') || 'softview.vercel.app';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const appUrl = process.env.APP_URL || `${protocol}://${host}`;
+  const redirectUri = process.env.GITHUB_REDIRECT_URI?.trim() || `${appUrl}/api/auth/github/callback`;
+  const { code, error } = req.query;
+
+  if (error) {
+    return res.redirect(`${appUrl}/?auth_error=${encodeURIComponent(String(error))}`);
+  }
+
+  let ghUser = {
+    id: 'github-user-' + Date.now(),
+    email: 'softview.user@github.com',
+    name: 'Aslbek (GitHub)',
+    picture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop'
+  };
+
+  const ghClientId = process.env.GITHUB_CLIENT_ID?.trim();
+  const ghClientSecret = process.env.GITHUB_CLIENT_SECRET?.trim();
+
+  if (code && code !== 'softview_custom_github_demo_code' && ghClientId && ghClientSecret) {
+    try {
+      const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          client_id: ghClientId,
+          client_secret: ghClientSecret,
+          code: String(code),
+          redirect_uri: redirectUri
+        }),
+      });
+      const tokenData = await tokenRes.json();
+      if (tokenData.access_token) {
+        const userRes = await fetch("https://api.github.com/user", {
+          headers: { Authorization: `token ${tokenData.access_token}`, "User-Agent": "SoftViewApp" },
+        });
+        const profile = await userRes.json();
+        if (profile) {
+          ghUser = {
+            id: profile.id || `gh-${Date.now()}`,
+            email: profile.email || `${profile.login}@github.com`,
+            name: profile.name || profile.login || 'GitHub User',
+            picture: profile.avatar_url || ghUser.picture
+          };
+        }
+      }
+    } catch (err) {
+      console.error("GitHub OAuth error:", err);
+    }
+  }
+
+  const responseHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><title>GitHub Authentication - SoftView</title>
+  <style>
+    body { background-color: #0b0f19; color: #f8fafc; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .card { background: #1e293b; border: 1px solid rgba(255, 255, 255, 0.2); padding: 32px; border-radius: 16px; text-align: center; width: 90%; max-width: 380px; }
+    .avatar { width: 64px; height: 64px; border-radius: 50%; margin-bottom: 16px; border: 2px solid #ffffff; }
+    h2 { font-size: 18px; margin: 0 0 8px 0; color: #fff; }
+    p { font-size: 13px; color: #94a3b8; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="${ghUser.picture}" class="avatar" alt="Avatar" />
+    <h2>Welcome, ${ghUser.name}!</h2>
+    <p>Signed in with GitHub. Returning to SoftView...</p>
+  </div>
+  <script>
+    const authData = ${JSON.stringify({ user: ghUser, appUrl })};
+    if (window.opener) {
+      window.opener.postMessage({ type: 'SOFTVIEW_CUSTOM_GITHUB_AUTH', payload: authData }, '*');
+      setTimeout(() => { window.close(); }, 800);
+    } else {
+      setTimeout(() => { window.location.href = authData.appUrl + '/?auth_success=true&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email); }, 1000);
+    }
+  </script>
+</body>
+</html>`;
+  res.send(responseHtml);
+};
+
+// ==========================================
+// DISCORD OAUTH FLOW ENDPOINTS
+// ==========================================
+const handleDiscordStart = (req: express.Request, res: express.Response) => {
+  const host = req.get('host') || 'softview.vercel.app';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const appUrl = process.env.APP_URL || `${protocol}://${host}`;
+  const redirectUri = process.env.DISCORD_REDIRECT_URI?.trim() || `${appUrl}/api/auth/discord/callback`;
+  const discordClientId = process.env.DISCORD_CLIENT_ID?.trim();
+
+  if (discordClientId && discordClientId !== "" && discordClientId !== "your-discord-client-id") {
+    const discordAuthUrl = new URL("https://discord.com/oauth2/authorize");
+    discordAuthUrl.searchParams.set("client_id", discordClientId);
+    discordAuthUrl.searchParams.set("redirect_uri", redirectUri);
+    discordAuthUrl.searchParams.set("response_type", "code");
+    discordAuthUrl.searchParams.set("scope", "identify email");
+
+    if (req.query.mode === 'json') {
+      return res.json({ success: true, url: discordAuthUrl.toString() });
+    }
+    return res.redirect(discordAuthUrl.toString());
+  }
+
+  const demoCallbackUrl = `${appUrl}/api/auth/discord/callback?code=softview_custom_discord_demo_code`;
+  if (req.query.mode === 'json') {
+    return res.json({ success: true, url: demoCallbackUrl });
+  }
+  return res.redirect(demoCallbackUrl);
+};
+
+const handleDiscordCallback = async (req: express.Request, res: express.Response) => {
+  const host = req.get('host') || 'softview.vercel.app';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const appUrl = process.env.APP_URL || `${protocol}://${host}`;
+  const redirectUri = process.env.DISCORD_REDIRECT_URI?.trim() || `${appUrl}/api/auth/discord/callback`;
+  const { code, error } = req.query;
+
+  if (error) {
+    return res.redirect(`${appUrl}/?auth_error=${encodeURIComponent(String(error))}`);
+  }
+
+  let discordUser = {
+    id: 'discord-user-' + Date.now(),
+    email: 'softview.user@discord.gg',
+    name: 'Aslbek (Discord)',
+    picture: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&auto=format&fit=crop'
+  };
+
+  const discordClientId = process.env.DISCORD_CLIENT_ID?.trim();
+  const discordClientSecret = process.env.DISCORD_CLIENT_SECRET?.trim();
+
+  if (code && code !== 'softview_custom_discord_demo_code' && discordClientId && discordClientSecret) {
+    try {
+      const tokenRes = await fetch("https://discord.com/api/oauth2/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: discordClientId,
+          client_secret: discordClientSecret,
+          code: String(code),
+          grant_type: "authorization_code",
+          redirect_uri: redirectUri
+        }),
+      });
+      const tokenData = await tokenRes.json();
+      if (tokenData.access_token) {
+        const userRes = await fetch("https://discord.com/api/users/@me", {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        const profile = await userRes.json();
+        if (profile) {
+          const avatarUrl = profile.avatar 
+            ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`
+            : discordUser.picture;
+          discordUser = {
+            id: profile.id || `discord-${Date.now()}`,
+            email: profile.email || `${profile.username}@discord.gg`,
+            name: profile.global_name || profile.username || 'Discord User',
+            picture: avatarUrl
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Discord OAuth error:", err);
+    }
+  }
+
+  const responseHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><title>Discord Authentication - SoftView</title>
+  <style>
+    body { background-color: #0b0f19; color: #f8fafc; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .card { background: #1e293b; border: 1px solid rgba(88, 101, 242, 0.4); padding: 32px; border-radius: 16px; text-align: center; width: 90%; max-width: 380px; }
+    .avatar { width: 64px; height: 64px; border-radius: 50%; margin-bottom: 16px; border: 2px solid #5865f2; }
+    h2 { font-size: 18px; margin: 0 0 8px 0; color: #fff; }
+    p { font-size: 13px; color: #94a3b8; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="${discordUser.picture}" class="avatar" alt="Avatar" />
+    <h2>Welcome, ${discordUser.name}!</h2>
+    <p>Signed in with Discord. Returning to SoftView...</p>
+  </div>
+  <script>
+    const authData = ${JSON.stringify({ user: discordUser, appUrl })};
+    if (window.opener) {
+      window.opener.postMessage({ type: 'SOFTVIEW_CUSTOM_DISCORD_AUTH', payload: authData }, '*');
+      setTimeout(() => { window.close(); }, 800);
+    } else {
+      setTimeout(() => { window.location.href = authData.appUrl + '/?auth_success=true&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email); }, 1000);
+    }
+  </script>
+</body>
+</html>`;
+  res.send(responseHtml);
+};
+
+// Express route registration for GitHub and Discord
+app.get(["/api/auth/github", "/auth/github", "/api/auth/github/"], handleGithubStart);
+app.get(["/api/auth/github/callback", "/auth/github/callback", "/api/auth/github/callback/"], handleGithubCallback);
+
+app.get(["/api/auth/discord", "/auth/discord", "/api/auth/discord/"], handleDiscordStart);
+app.get(["/api/auth/discord/callback", "/auth/discord/callback", "/api/auth/discord/callback/"], handleDiscordCallback);
+
+// Universal fallback middleware for OAuth routes to catch any environment path variations
 app.use((req, res, next) => {
   const urlPath = (req.originalUrl || req.url || '').split('?')[0];
-  if (urlPath === '/api/auth/google/callback' || urlPath === '/auth/google/callback' || urlPath.endsWith('/auth/google/callback')) {
-    return handleGoogleCallback(req, res);
-  }
-  if (urlPath === '/api/auth/google' || urlPath === '/auth/google' || urlPath.endsWith('/auth/google')) {
-    return handleGoogleStart(req, res);
-  }
+  if (urlPath.includes('/auth/google/callback')) return handleGoogleCallback(req, res);
+  if (urlPath.includes('/auth/google')) return handleGoogleStart(req, res);
+  if (urlPath.includes('/auth/github/callback')) return handleGithubCallback(req, res);
+  if (urlPath.includes('/auth/github')) return handleGithubStart(req, res);
+  if (urlPath.includes('/auth/discord/callback')) return handleDiscordCallback(req, res);
+  if (urlPath.includes('/auth/discord')) return handleDiscordStart(req, res);
   next();
 });
 

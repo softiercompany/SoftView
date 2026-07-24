@@ -282,7 +282,12 @@ export default function App() {
   }, [videos, searchQuery]);
 
   if (!isLoggedIn) {
-    return <WelcomeLanding onSignIn={handleSignIn} />;
+    return (
+      <>
+        <WelcomeLanding onSignIn={handleSignIn} />
+        <CookieBanner />
+      </>
+    );
   }
 
   return (

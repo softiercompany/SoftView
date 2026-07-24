@@ -30,7 +30,7 @@ export function getSupabaseConfigDetails() {
   };
 }
 
-// Custom Google OAuth Flow (Starts and finishes strictly on application domain, bypassing *.supabase.co)
+// Custom OAuth Flow Helpers (Start and finish strictly on application domain)
 export async function startCustomGoogleAuth() {
   try {
     const res = await fetch('/api/auth/google?mode=json');
@@ -41,6 +41,32 @@ export async function startCustomGoogleAuth() {
     return { url: '/api/auth/google', error: null };
   } catch (err: any) {
     return { url: '/api/auth/google', error: null };
+  }
+}
+
+export async function startCustomGithubAuth() {
+  try {
+    const res = await fetch('/api/auth/github?mode=json');
+    const data = await res.json();
+    if (data.url) {
+      return { url: data.url, error: null };
+    }
+    return { url: '/api/auth/github', error: null };
+  } catch (err: any) {
+    return { url: '/api/auth/github', error: null };
+  }
+}
+
+export async function startCustomDiscordAuth() {
+  try {
+    const res = await fetch('/api/auth/discord?mode=json');
+    const data = await res.json();
+    if (data.url) {
+      return { url: data.url, error: null };
+    }
+    return { url: '/api/auth/discord', error: null };
+  } catch (err: any) {
+    return { url: '/api/auth/discord', error: null };
   }
 }
 
