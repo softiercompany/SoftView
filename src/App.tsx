@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import HomeHub from './components/HomeHub';
@@ -498,6 +499,9 @@ export default function App() {
 
       {/* COOKIE & PRIVACY AGREEMENT BADGE/BANNER */}
       <CookieBanner />
+
+      {/* VERCEL SPEED INSIGHTS */}
+      <SpeedInsights />
     </div>
   );
 }
