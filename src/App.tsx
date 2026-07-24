@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
+import { Analytics } from '@vercel/analytics/react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import HomeHub from './components/HomeHub';
@@ -502,6 +503,7 @@ export default function App() {
 
       {/* VERCEL SPEED INSIGHTS */}
       <SpeedInsights />
+      <Analytics />
     </div>
   );
 }
