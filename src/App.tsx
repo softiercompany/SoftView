@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from 'react';
-import { SpeedInsights } from '@vercel/speed-insights/react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import HomeHub from './components/HomeHub';
@@ -17,6 +16,8 @@ import SettingsHub from './components/SettingsHub';
 import VideoPlayer from './components/VideoPlayer';
 import PremiumModal from './components/PremiumModal';
 import WelcomeLanding from './components/WelcomeLanding';
+import SignUpOnboarding from './components/SignUpOnboarding';
+import SendedPage from './components/SendedPage';
 import KeypadTourModal from './components/KeypadTourModal';
 import CookieBanner from './components/CookieBanner';
 import { initialVideos, learningPaths } from './data';
@@ -29,7 +30,9 @@ import {
   isSupabaseConfigured,
   saveSupabaseUserProfile,
   getSupabaseClient,
-  signOutSupabase 
+  signOutSupabase,
+  syncUserToBothDatabases,
+  sendSupabaseAuthLink 
 } from './lib/supabase';
 import { AnimatePresence, motion } from 'motion/react';
 
@@ -65,21 +68,58 @@ export default function App() {
   const [watchHistory, setWatchHistory] = useState<Video[]>([]);
   const [likedVideos, setLikedVideos] = useState<Video[]>([]);
 
-  // Check for custom Google OAuth URL params or popup message
+  // Navigation path state for /sended page routing
+  const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
+  const [sendedEmail, setSendedEmail] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('email') || '';
+  });
+
+  const handleNavigateToSended = (email: string) => {
+    setSendedEmail(email);
+    setCurrentPath('/sended');
+    window.history.pushState({}, '', `/sended?email=${encodeURIComponent(email)}`);
+  };
+
+  const handleBackFromSended = () => {
+    setCurrentPath('/');
+    window.history.pushState({}, '', '/');
+  };
+
+  // Onboarding state for Sign Up flow (Google / GitHub / Discord)
+  const [pendingOnboardingData, setPendingOnboardingData] = useState<{
+    provider: 'google' | 'github' | 'discord' | 'email';
+    email: string;
+    rawName: string;
+    initialUsername?: string;
+    initialAvatar?: string;
+  } | null>(null);
+
+  // Check for custom OAuth URL params or popup message
   useEffect(() => {
     // 1. Check URL parameters if redirected back from custom OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('auth_success') === 'true') {
-      const userName = urlParams.get('user_name') || 'Google User';
+      const userProvider = (urlParams.get('user_provider') || 'google') as 'google' | 'github' | 'discord' | 'email';
+      const userName = urlParams.get('user_name') || 'User';
+      const userEmail = urlParams.get('user_email') || (userProvider === 'google' ? 'softview.user@gmail.com' : 'softview.user@github.com');
+      const userUsername = urlParams.get('user_username');
       const userAvatar = urlParams.get('user_avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop';
-      
-      setIsLoggedIn(true);
-      localStorage.setItem('softview_logged_in', 'true');
-      setUser((prev) => ({
-        ...prev,
-        name: userName,
-        avatarUrl: userAvatar
-      }));
+
+      // For Google: username defaults to user's e-mail prefix without @gmail.com
+      // For GitHub: username defaults to user's GitHub username handle
+      const cleanEmailPrefix = userEmail.includes('@') ? userEmail.split('@')[0] : userEmail;
+      const initialUsername = userProvider === 'google' 
+        ? cleanEmailPrefix 
+        : ((userUsername || userName || 'aslbek').includes('@') ? (userUsername || userName).split('@')[0] : (userUsername || userName || 'aslbek'));
+
+      setPendingOnboardingData({
+        provider: userProvider,
+        email: userEmail,
+        rawName: userName,
+        initialUsername,
+        initialAvatar: userAvatar
+      });
 
       // Clean URL search parameters without reloading
       const cleanUrl = window.location.pathname;
@@ -88,24 +128,46 @@ export default function App() {
 
     // 2. Listen for postMessage from popup window custom OAuth
     const handlePopupMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'SOFTVIEW_CUSTOM_GOOGLE_AUTH' && event.data.payload) {
+      const type = event.data?.type;
+      if (type && type.startsWith('SOFTVIEW_CUSTOM_') && event.data?.payload) {
         const payload = event.data.payload;
-        const googleUser = payload.user || {};
-        const userName = googleUser.name || googleUser.email?.split('@')[0] || 'Google User';
-        const avatar = googleUser.picture || googleUser.avatarUrl;
+        const oUser = payload.user || {};
+        const provider: 'google' | 'github' | 'discord' = type.includes('GOOGLE') ? 'google' : type.includes('GITHUB') ? 'github' : 'discord';
+        const userEmail = oUser.email || (provider === 'google' ? 'softview.user@gmail.com' : 'softview.user@github.com');
+        const rawName = oUser.name || 'User';
+        const userAvatar = oUser.picture || oUser.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop';
+        
+        // Google -> Default username is clean email handle without @gmail.com
+        // GitHub -> Default username is user's GitHub username handle
+        const cleanEmailPrefix = userEmail.includes('@') ? userEmail.split('@')[0] : userEmail;
+        const initialUsername = provider === 'google'
+          ? cleanEmailPrefix
+          : ((oUser.username || oUser.login || rawName || 'aslbek').includes('@') ? (oUser.username || oUser.login || rawName).split('@')[0] : (oUser.username || oUser.login || rawName || 'aslbek'));
 
-        setIsLoggedIn(true);
-        localStorage.setItem('softview_logged_in', 'true');
-        setUser((prev) => ({
-          ...prev,
-          name: userName,
-          avatarUrl: avatar || prev.avatarUrl
-        }));
+        setPendingOnboardingData({
+          provider,
+          email: userEmail,
+          rawName,
+          initialUsername,
+          initialAvatar: userAvatar
+        });
       }
     };
 
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('email')) {
+        setSendedEmail(params.get('email') || '');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
     window.addEventListener('message', handlePopupMessage);
-    return () => window.removeEventListener('message', handlePopupMessage);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('message', handlePopupMessage);
+    };
   }, []);
 
   // Fetch initial data & subscribe to Supabase Auth on mount
@@ -248,18 +310,79 @@ export default function App() {
     setUser(updated);
   };
 
-  // Welcome / Sign In handlers
-  const handleSignIn = (nameToPass?: string) => {
+  // Welcome / Sign In / Onboarding handlers
+  const handleSignIn = (
+    nameToPass?: string,
+    extraData?: { email?: string; avatarUrl?: string; provider?: 'google' | 'github' | 'discord' | 'email'; username?: string }
+  ) => {
+    if (extraData && extraData.provider) {
+      const provider = extraData.provider;
+      const email = extraData.email || 'softview.user@gmail.com';
+      const cleanEmailPrefix = email.includes('@') ? email.split('@')[0] : email;
+      const initialUsername = provider === 'google'
+        ? cleanEmailPrefix
+        : ((extraData.username || nameToPass || 'aslbek').includes('@') ? (extraData.username || nameToPass).split('@')[0] : (extraData.username || nameToPass || 'aslbek'));
+
+      setPendingOnboardingData({
+        provider,
+        email,
+        rawName: nameToPass || 'User',
+        initialUsername,
+        initialAvatar: extraData.avatarUrl
+      });
+    } else {
+      setIsLoggedIn(true);
+      localStorage.setItem('softview_logged_in', 'true');
+      const finalName = nameToPass && nameToPass.trim() ? nameToPass : 'SoftView User';
+      const userEmail = extraData?.email || `${finalName.toLowerCase().replace(/\s+/g, '_')}@softview.app`;
+      setUser((prev) => ({ ...prev, name: finalName }));
+      
+      syncUserToBothDatabases({
+        email: userEmail,
+        name: finalName,
+        username: extraData?.username || finalName.toLowerCase().replace(/\s+/g, '_'),
+        avatarUrl: extraData?.avatarUrl,
+        provider: extraData?.provider || 'email'
+      });
+    }
+  };
+
+  const handleOnboardingComplete = (data: {
+    displayName: string;
+    username: string;
+    avatarUrl: string;
+    agreedToTerms: boolean;
+    email: string;
+    provider: string;
+  }) => {
+    const finalName = data.displayName || data.username;
+    setUser((prev) => ({
+      ...prev,
+      name: finalName,
+      avatarUrl: data.avatarUrl
+    }));
     setIsLoggedIn(true);
     localStorage.setItem('softview_logged_in', 'true');
-    if (nameToPass && nameToPass.trim()) {
-      setUser((prev) => ({ ...prev, name: nameToPass }));
-    }
+    localStorage.setItem('softview_user_name', finalName);
+    localStorage.setItem('softview_user_username', data.username);
+    localStorage.setItem('softview_user_avatar', data.avatarUrl);
+    setPendingOnboardingData(null);
+    setActiveTab('home');
+
+    // Save user to BOTH Server Database AND Supabase Database!
+    syncUserToBothDatabases({
+      email: data.email,
+      name: finalName,
+      username: data.username,
+      avatarUrl: data.avatarUrl,
+      provider: data.provider
+    });
   };
 
   const handleSignOut = () => {
     setIsLoggedIn(false);
     localStorage.setItem('softview_logged_in', 'false');
+    setPendingOnboardingData(null);
     signOutSupabase();
   };
 
@@ -282,10 +405,37 @@ export default function App() {
     );
   }, [videos, searchQuery]);
 
+  if (currentPath === '/sended') {
+    return (
+      <SendedPage
+        email={sendedEmail}
+        onBackToSignIn={handleBackFromSended}
+        onResendLink={sendSupabaseAuthLink}
+      />
+    );
+  }
+
+  if (pendingOnboardingData) {
+    return (
+      <SignUpOnboarding
+        provider={pendingOnboardingData.provider}
+        email={pendingOnboardingData.email}
+        rawName={pendingOnboardingData.rawName}
+        initialUsername={pendingOnboardingData.initialUsername}
+        initialAvatar={pendingOnboardingData.initialAvatar}
+        onComplete={handleOnboardingComplete}
+        onCancel={() => setPendingOnboardingData(null)}
+      />
+    );
+  }
+
   if (!isLoggedIn) {
     return (
       <>
-        <WelcomeLanding onSignIn={handleSignIn} />
+        <WelcomeLanding
+          onSignIn={handleSignIn}
+          onNavigateToSended={handleNavigateToSended}
+        />
         <CookieBanner />
       </>
     );
@@ -499,9 +649,6 @@ export default function App() {
 
       {/* COOKIE & PRIVACY AGREEMENT BADGE/BANNER */}
       <CookieBanner />
-
-      {/* VERCEL SPEED INSIGHTS */}
-      <SpeedInsights />
     </div>
   );
 }

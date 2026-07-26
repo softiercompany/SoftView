@@ -779,12 +779,182 @@ app.post("/api/ai-library", async (req, res) => {
 });
 
 // ==========================================
-// SUPABASE DATABASE INTEGRATION API ENDPOINTS
+// SUPABASE & SERVER DATABASE INTEGRATION API ENDPOINTS
 // ==========================================
 
-// In-memory fallback database for videos when Supabase is not yet populated
+// In-memory fallback database for videos, learning paths, and users
 let serverVideos: any[] = [];
 let serverLearningPaths: any[] = [];
+
+// In-memory server database array for registered users (Server DB)
+let serverUsers: Array<{
+  id: string;
+  email: string;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
+  provider: string;
+  createdAt: string;
+  updatedAt: string;
+}> = [];
+
+// Helper function to save a user into BOTH Server Database AND Supabase Database
+async function saveUserToDatabases(user: {
+  id?: string;
+  email: string;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
+  provider?: string;
+}) {
+  const now = new Date().toISOString();
+  const provider = user.provider || 'email';
+  const userId = user.id || `usr_${provider}_${Date.now()}`;
+  const username = user.username || (user.email.includes('@') ? user.email.split('@')[0] : user.email);
+  const avatarUrl = user.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop';
+
+  const userRecord = {
+    id: userId,
+    email: user.email,
+    name: user.name,
+    username,
+    avatarUrl,
+    provider,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // 1. Save / Update in Server Database (serverUsers)
+  const existingIdx = serverUsers.findIndex(u => u.email.toLowerCase() === user.email.toLowerCase());
+  if (existingIdx >= 0) {
+    serverUsers[existingIdx] = {
+      ...serverUsers[existingIdx],
+      name: user.name || serverUsers[existingIdx].name,
+      username: username || serverUsers[existingIdx].username,
+      avatarUrl: avatarUrl || serverUsers[existingIdx].avatarUrl,
+      provider: provider || serverUsers[existingIdx].provider,
+      updatedAt: now,
+    };
+  } else {
+    serverUsers.unshift(userRecord);
+  }
+
+  console.log(`[Server DB] Saved user: ${user.name} (${user.email}) via ${provider}. Total server users: ${serverUsers.length}`);
+
+  // 2. Save / Update in Supabase Database (public.users, public.user_profiles, & Supabase Auth)
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (supabaseUrl && (supabaseServiceKey || supabaseAnonKey)) {
+    try {
+      const { createClient } = await import("@supabase/supabase-js");
+      const keyToUse = supabaseServiceKey || supabaseAnonKey;
+      const supabase = createClient(supabaseUrl, keyToUse, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
+
+      // Upsert into public.users table
+      const { error: usersErr } = await supabase.from('users').upsert({
+        id: userId,
+        email: user.email,
+        name: user.name,
+        avatar_url: avatarUrl,
+        role: 'user',
+        created_at: now
+      }, { onConflict: 'email' });
+
+      if (usersErr) {
+        console.warn(`[Supabase DB Notice] public.users table upsert: ${usersErr.message}`);
+      } else {
+        console.log(`[Supabase DB] Saved user ${user.email} in public.users table`);
+      }
+
+      // Upsert into public.user_profiles table
+      const { error: profileErr } = await supabase.from('user_profiles').upsert({
+        id: userId,
+        user_id: userId,
+        name: user.name,
+        avatar_url: avatarUrl,
+        updated_at: now
+      }, { onConflict: 'user_id' });
+
+      if (profileErr) {
+        console.warn(`[Supabase DB Notice] public.user_profiles table upsert: ${profileErr.message}`);
+      }
+
+      // Also create/update Auth admin user if service key available
+      if (supabaseServiceKey) {
+        const { data: usersData } = await supabase.auth.admin.listUsers();
+        const existingAuthUser = usersData?.users?.find((u) => u.email === user.email);
+
+        if (existingAuthUser) {
+          await supabase.auth.admin.updateUserById(existingAuthUser.id, {
+            user_metadata: {
+              full_name: user.name,
+              avatar_url: avatarUrl,
+              name: user.name,
+              picture: avatarUrl,
+              provider,
+              username
+            },
+            email_confirm: true,
+          });
+        } else {
+          await supabase.auth.admin.createUser({
+            email: user.email,
+            email_confirm: true,
+            user_metadata: {
+              full_name: user.name,
+              avatar_url: avatarUrl,
+              name: user.name,
+              picture: avatarUrl,
+              provider,
+              username
+            },
+          });
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Supabase DB Sync Warning]: ${err?.message || err}`);
+    }
+  }
+
+  return userRecord;
+}
+
+// User Database API Endpoints
+app.get("/api/users", (req, res) => {
+  res.json({ success: true, count: serverUsers.length, users: serverUsers });
+});
+
+app.post("/api/users", async (req, res) => {
+  const { email, name, username, avatarUrl, provider, id } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, message: "User email is required" });
+  }
+
+  const savedUser = await saveUserToDatabases({
+    id,
+    email,
+    name: name || email.split('@')[0],
+    username,
+    avatarUrl,
+    provider: provider || 'email'
+  });
+
+  res.json({ success: true, user: savedUser, totalServerUsers: serverUsers.length });
+});
+
+app.get("/api/users/:email", (req, res) => {
+  const { email } = req.params;
+  const found = serverUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (found) {
+    res.json({ success: true, user: found });
+  } else {
+    res.status(404).json({ success: false, message: "User not found in server database" });
+  }
+});
 
 // Get Supabase connection status
 app.get("/api/supabase/status", (req, res) => {
@@ -1123,6 +1293,15 @@ const handleGoogleCallback = async (req: express.Request, res: express.Response)
     }
   }
 
+  // Save user to BOTH Server Database AND Supabase Database!
+  await saveUserToDatabases({
+    id: googleUser.id,
+    email: googleUser.email,
+    name: googleUser.name,
+    avatarUrl: googleUser.picture,
+    provider: 'google'
+  });
+
   // Return clean, branded HTML completion screen staying strictly on SoftView domain
   const responseHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -1182,7 +1361,7 @@ const handleGoogleCallback = async (req: express.Request, res: express.Response)
   </div>
   <script>
     const authData = ${JSON.stringify({
-      user: googleUser,
+      user: { ...googleUser, provider: 'google' },
       session: sessionData,
       appUrl: appUrl
     })};
@@ -1192,7 +1371,7 @@ const handleGoogleCallback = async (req: express.Request, res: express.Response)
       setTimeout(() => { window.close(); }, 800);
     } else {
       setTimeout(() => {
-        window.location.href = authData.appUrl + '/?auth_success=true&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email) + '&user_avatar=' + encodeURIComponent(authData.user.picture);
+        window.location.href = authData.appUrl + '/?auth_success=true&user_provider=google&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email) + '&user_avatar=' + encodeURIComponent(authData.user.picture);
       }, 1000);
     }
   </script>
@@ -1209,11 +1388,25 @@ app.get(["/api/auth/google/callback", "/auth/google/callback", "/api/auth/google
 // ==========================================
 // GITHUB OAUTH FLOW ENDPOINTS
 // ==========================================
+const getGithubRedirectUri = (req: express.Request) => {
+  if (process.env.GITHUB_REDIRECT_URI?.trim()) {
+    let uri = process.env.GITHUB_REDIRECT_URI.trim();
+    if (uri.endsWith('/api/auth/github') || uri.endsWith('/auth/github')) {
+      uri = uri + '/callback';
+    }
+    return uri;
+  }
+  const host = req.get('host') || 'softview.vercel.app';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const appUrl = process.env.APP_URL || `${protocol}://${host}`;
+  return `${appUrl}/api/auth/github/callback`;
+};
+
 const handleGithubStart = (req: express.Request, res: express.Response) => {
   const host = req.get('host') || 'softview.vercel.app';
   const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   const appUrl = process.env.APP_URL || `${protocol}://${host}`;
-  const redirectUri = process.env.GITHUB_REDIRECT_URI?.trim() || `${appUrl}/api/auth/github/callback`;
+  const redirectUri = getGithubRedirectUri(req);
   const ghClientId = process.env.GITHUB_CLIENT_ID?.trim();
 
   if (ghClientId && ghClientId !== "" && ghClientId !== "your-github-client-id") {
@@ -1239,7 +1432,7 @@ const handleGithubCallback = async (req: express.Request, res: express.Response)
   const host = req.get('host') || 'softview.vercel.app';
   const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   const appUrl = process.env.APP_URL || `${protocol}://${host}`;
-  const redirectUri = process.env.GITHUB_REDIRECT_URI?.trim() || `${appUrl}/api/auth/github/callback`;
+  const redirectUri = getGithubRedirectUri(req);
   const { code, error } = req.query;
 
   if (error) {
@@ -1250,7 +1443,9 @@ const handleGithubCallback = async (req: express.Request, res: express.Response)
     id: 'github-user-' + Date.now(),
     email: 'softview.user@github.com',
     name: 'Aslbek (GitHub)',
-    picture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop'
+    username: 'aslbek',
+    picture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop',
+    provider: 'github'
   };
 
   const ghClientId = process.env.GITHUB_CLIENT_ID?.trim();
@@ -1277,9 +1472,11 @@ const handleGithubCallback = async (req: express.Request, res: express.Response)
         if (profile) {
           ghUser = {
             id: profile.id || `gh-${Date.now()}`,
-            email: profile.email || `${profile.login}@github.com`,
+            email: profile.email || `${profile.login || 'aslbek'}@github.com`,
             name: profile.name || profile.login || 'GitHub User',
-            picture: profile.avatar_url || ghUser.picture
+            username: profile.login || profile.name || 'aslbek',
+            picture: profile.avatar_url || ghUser.picture,
+            provider: 'github'
           };
         }
       }
@@ -1287,6 +1484,16 @@ const handleGithubCallback = async (req: express.Request, res: express.Response)
       console.error("GitHub OAuth error:", err);
     }
   }
+
+  // Save user to BOTH Server Database AND Supabase Database!
+  await saveUserToDatabases({
+    id: ghUser.id,
+    email: ghUser.email,
+    name: ghUser.name,
+    username: ghUser.username,
+    avatarUrl: ghUser.picture,
+    provider: 'github'
+  });
 
   const responseHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -1312,7 +1519,7 @@ const handleGithubCallback = async (req: express.Request, res: express.Response)
       window.opener.postMessage({ type: 'SOFTVIEW_CUSTOM_GITHUB_AUTH', payload: authData }, '*');
       setTimeout(() => { window.close(); }, 800);
     } else {
-      setTimeout(() => { window.location.href = authData.appUrl + '/?auth_success=true&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email); }, 1000);
+      setTimeout(() => { window.location.href = authData.appUrl + '/?auth_success=true&user_provider=github&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email) + '&user_username=' + encodeURIComponent(authData.user.username) + '&user_avatar=' + encodeURIComponent(authData.user.picture); }, 1000);
     }
   </script>
 </body>
@@ -1323,11 +1530,25 @@ const handleGithubCallback = async (req: express.Request, res: express.Response)
 // ==========================================
 // DISCORD OAUTH FLOW ENDPOINTS
 // ==========================================
+const getDiscordRedirectUri = (req: express.Request) => {
+  if (process.env.DISCORD_REDIRECT_URI?.trim()) {
+    let uri = process.env.DISCORD_REDIRECT_URI.trim();
+    if (uri.endsWith('/api/auth/discord') || uri.endsWith('/auth/discord')) {
+      uri = uri + '/callback';
+    }
+    return uri;
+  }
+  const host = req.get('host') || 'softview.vercel.app';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const appUrl = process.env.APP_URL || `${protocol}://${host}`;
+  return `${appUrl}/api/auth/discord/callback`;
+};
+
 const handleDiscordStart = (req: express.Request, res: express.Response) => {
   const host = req.get('host') || 'softview.vercel.app';
   const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   const appUrl = process.env.APP_URL || `${protocol}://${host}`;
-  const redirectUri = process.env.DISCORD_REDIRECT_URI?.trim() || `${appUrl}/api/auth/discord/callback`;
+  const redirectUri = getDiscordRedirectUri(req);
   const discordClientId = process.env.DISCORD_CLIENT_ID?.trim();
 
   if (discordClientId && discordClientId !== "" && discordClientId !== "your-discord-client-id") {
@@ -1354,7 +1575,7 @@ const handleDiscordCallback = async (req: express.Request, res: express.Response
   const host = req.get('host') || 'softview.vercel.app';
   const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   const appUrl = process.env.APP_URL || `${protocol}://${host}`;
-  const redirectUri = process.env.DISCORD_REDIRECT_URI?.trim() || `${appUrl}/api/auth/discord/callback`;
+  const redirectUri = getDiscordRedirectUri(req);
   const { code, error } = req.query;
 
   if (error) {
@@ -1407,6 +1628,15 @@ const handleDiscordCallback = async (req: express.Request, res: express.Response
     }
   }
 
+  // Save user to BOTH Server Database AND Supabase Database!
+  await saveUserToDatabases({
+    id: discordUser.id,
+    email: discordUser.email,
+    name: discordUser.name,
+    avatarUrl: discordUser.picture,
+    provider: 'discord'
+  });
+
   const responseHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1431,7 +1661,7 @@ const handleDiscordCallback = async (req: express.Request, res: express.Response
       window.opener.postMessage({ type: 'SOFTVIEW_CUSTOM_DISCORD_AUTH', payload: authData }, '*');
       setTimeout(() => { window.close(); }, 800);
     } else {
-      setTimeout(() => { window.location.href = authData.appUrl + '/?auth_success=true&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email); }, 1000);
+      setTimeout(() => { window.location.href = authData.appUrl + '/?auth_success=true&user_provider=discord&user_name=' + encodeURIComponent(authData.user.name) + '&user_email=' + encodeURIComponent(authData.user.email) + '&user_avatar=' + encodeURIComponent(authData.user.picture); }, 1000);
     }
   </script>
 </body>

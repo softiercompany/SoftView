@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   User, Shield, Lock, Link2, Tv, Moon, Play, Bell, Globe, Heart, 
   ShieldAlert, Download, Database, Laptop, HelpCircle, Info, LogOut, 
@@ -9,6 +9,7 @@ import {
   UserCheck, Activity, Award, BarChart3, Wifi, Languages, SlidersHorizontal, Scale
 } from 'lucide-react';
 import { UserProfile } from '../types';
+import { syncUserToBothDatabases, isSupabaseConfigured } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface SettingsHubProps {
@@ -131,6 +132,29 @@ export default function SettingsHub({ user, onUpdateUser, onClearHistory }: Sett
   const [downloadsSize, setDownloadsSize] = useState(12.4);
   const [offlineVideosSize, setOfflineVideosSize] = useState(8.0);
   const [isClearingCache, setIsClearingCache] = useState(false);
+  const [dbUsersList, setDbUsersList] = useState<any[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+  const fetchUsersFromDatabase = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const res = await fetch('/api/users');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        setDbUsersList(data.users);
+      }
+    } catch (err) {
+      console.warn('Failed to load users from DB:', err);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'storage') {
+      fetchUsersFromDatabase();
+    }
+  }, [activeTab]);
 
   // 13. NOTIFICATIONS STATE
   const [notifyNewUploads, setNotifyNewUploads] = useState(true);
@@ -1135,9 +1159,89 @@ export default function SettingsHub({ user, onUpdateUser, onClearHistory }: Sett
                 <div className="pb-4 border-b border-white/5">
                   <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
                     <Database className="w-5 h-5 text-indigo-400" />
-                    <span>Data, Storage & Supabase Database ⚡</span>
+                    <span>User's Data & Cloud Storage ⚡</span>
                   </h2>
-                  <p className="text-xs text-gray-400">Manage real-time Supabase cloud database synchronization, SQL schemas, and local storage allocation.</p>
+                  <p className="text-xs text-gray-400">Manage registered user accounts, server database synchronization, Supabase cloud schema, and local storage allocation.</p>
+                </div>
+
+                {/* ACTIVE USER DATA & DATABASE SYNC CARD */}
+                <div className="p-5 bg-gradient-to-r from-indigo-950/60 via-[#0a081f] to-[#04030d] border border-indigo-500/40 rounded-2xl space-y-4 shadow-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <img 
+                        src={user.avatarUrl} 
+                        alt={user.name} 
+                        className="w-12 h-12 rounded-full border-2 border-indigo-400 object-cover shadow-lg shrink-0" 
+                      />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-extrabold text-white">{user.name}</h3>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                            Level {user.level} • {user.xp} XP
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400">Account status: Active & Synced to Databases</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        await syncUserToBothDatabases({
+                          email: editEmail || 'aslbek.dev@gmail.com',
+                          name: user.name,
+                          avatarUrl: user.avatarUrl,
+                          provider: 'auth'
+                        });
+                        await fetchUsersFromDatabase();
+                        triggerToast('User data successfully synchronized to both Server DB and Supabase!');
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Sync My Data to Databases</span>
+                    </button>
+                  </div>
+
+                  {/* REGISTERED USERS DATABASE DIRECTORY */}
+                  <div className="pt-3 border-t border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-300 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-cyan-400" />
+                        <span>Registered User Accounts in Database ({dbUsersList.length})</span>
+                      </span>
+                      <button 
+                        onClick={fetchUsersFromDatabase}
+                        disabled={isLoadingUsers}
+                        className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                        <span>Refresh List</span>
+                      </button>
+                    </div>
+
+                    {dbUsersList.length === 0 ? (
+                      <div className="p-4 bg-black/40 border border-white/5 rounded-xl text-center text-xs text-gray-400">
+                        No secondary registered users found yet. Sign up or log in via Google, GitHub, Discord, or Email to register new users into the DB.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto scrollbar-thin pr-1">
+                        {dbUsersList.map((u, idx) => (
+                          <div key={u.id || idx} className="p-3 bg-black/50 border border-white/10 rounded-xl flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2.5 overflow-hidden">
+                              <img src={u.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop'} alt={u.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                              <div className="truncate">
+                                <span className="font-bold text-gray-200 block truncate">{u.name || u.email}</span>
+                                <span className="text-[10px] text-gray-400 block truncate">{u.email}</span>
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
+                              {u.provider || 'email'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* SUPABASE CLOUD DATABASE CONNECTION CARD */}
@@ -1152,7 +1256,7 @@ export default function SettingsHub({ user, onUpdateUser, onClearHistory }: Sett
                           <span>Supabase Realtime Cloud Database</span>
                           <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wide">Ready</span>
                         </h3>
-                        <p className="text-xs text-gray-400">Direct integration for live user videos, playlists, and watch analytics.</p>
+                        <p className="text-xs text-gray-400">Direct integration for live user accounts, user profiles, videos, and playlists.</p>
                       </div>
                     </div>
                   </div>
@@ -1176,10 +1280,31 @@ export default function SettingsHub({ user, onUpdateUser, onClearHistory }: Sett
                   {/* SQL Schema Copy Codebox */}
                   <div className="space-y-2 pt-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-300">Supabase SQL Schema (Run in SQL Editor):</span>
+                      <span className="text-xs font-bold text-gray-300">Supabase SQL Schema (User Data & App Tables):</span>
                       <button 
                         onClick={() => {
-                          const sql = `-- Supabase Table Setup for SoftView App
+                          const sql = `-- Supabase Complete Table Setup for User Data & App
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT,
+  avatar_url TEXT,
+  role TEXT DEFAULT 'user',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id TEXT PRIMARY KEY,
+  user_id TEXT UNIQUE REFERENCES users(id),
+  name TEXT,
+  level INTEGER DEFAULT 12,
+  xp INTEGER DEFAULT 620,
+  xp_next_level INTEGER DEFAULT 1000,
+  avatar_url TEXT,
+  is_premium BOOLEAN DEFAULT false,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS videos (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -1207,41 +1332,34 @@ CREATE TABLE IF NOT EXISTS learning_paths (
   progress INTEGER DEFAULT 0,
   category TEXT,
   level TEXT
-);
-
-CREATE TABLE IF NOT EXISTS user_profiles (
-  id TEXT PRIMARY KEY,
-  name TEXT,
-  level INTEGER DEFAULT 12,
-  xp INTEGER DEFAULT 620,
-  xp_next_level INTEGER DEFAULT 1000,
-  avatar_url TEXT,
-  is_premium BOOLEAN DEFAULT false
 );`;
                           navigator.clipboard.writeText(sql);
-                          triggerToast('SQL Schema clipboardga nusxalandi!');
+                          triggerToast('Full User Data SQL Schema copied to clipboard!');
                         }}
                         className="px-3 py-1 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-bold rounded-lg transition-all border border-emerald-500/30 flex items-center gap-1.5 cursor-pointer"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>SQL Schemani Nusxalash</span>
+                        <span>Copy Complete SQL Schema</span>
                       </button>
                     </div>
 
                     <pre className="p-3 bg-[#030208] border border-white/10 rounded-xl text-[10px] text-gray-300 font-mono overflow-x-auto max-h-36 scrollbar-thin">
-                      {`CREATE TABLE IF NOT EXISTS videos (
+                      {`CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT,
-  youtube_url TEXT NOT NULL,
-  cover_url TEXT,
-  duration TEXT,
-  views TEXT,
-  upload_date TEXT,
-  creator TEXT,
-  creator_verified BOOLEAN DEFAULT true,
-  category TEXT DEFAULT 'technology',
-  language TEXT DEFAULT 'Uzbek'
+  email TEXT UNIQUE NOT NULL,
+  name TEXT,
+  avatar_url TEXT,
+  role TEXT DEFAULT 'user',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id TEXT PRIMARY KEY,
+  user_id TEXT UNIQUE REFERENCES users(id),
+  name TEXT,
+  level INTEGER DEFAULT 12,
+  xp INTEGER DEFAULT 620,
+  avatar_url TEXT
 );`}
                     </pre>
                   </div>

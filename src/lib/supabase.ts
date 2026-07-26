@@ -342,3 +342,104 @@ export async function saveSupabaseUserProfile(user: UserProfile): Promise<boolea
     return false;
   }
 }
+
+// Save complete user record to Supabase public.users and public.user_profiles tables
+export async function saveSupabaseUserRecord(userData: {
+  id?: string;
+  email: string;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
+  provider?: string;
+}): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const userId = userData.id || `usr_${userData.provider || 'auth'}_${Date.now()}`;
+    const { error: userErr } = await client.from('users').upsert({
+      id: userId,
+      email: userData.email,
+      name: userData.name,
+      avatar_url: userData.avatarUrl,
+      role: 'user',
+      created_at: new Date().toISOString()
+    }, { onConflict: 'email' });
+
+    const { error: profileErr } = await client.from('user_profiles').upsert({
+      id: userId,
+      user_id: userId,
+      name: userData.name,
+      avatar_url: userData.avatarUrl,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+
+    return !userErr && !profileErr;
+  } catch (err) {
+    console.warn('Notice saving user to Supabase:', err);
+    return false;
+  }
+}
+
+// Send email auth link (OTP/magic link) via Supabase Auth and save user record
+export async function sendSupabaseAuthLink(email: string, fullName?: string) {
+  const client = getSupabaseClient();
+  const name = fullName || email.split('@')[0];
+
+  // Sync user record to both databases first
+  await syncUserToBothDatabases({
+    email,
+    name,
+    provider: 'email'
+  });
+
+  if (client) {
+    try {
+      const redirectUrl = `${window.location.origin}/?auth_success=true&user_provider=email&user_email=${encodeURIComponent(email)}&user_name=${encodeURIComponent(name)}`;
+      const { error } = await client.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            full_name: name,
+            name
+          }
+        }
+      });
+      if (error) {
+        console.warn('Supabase magic link message:', error.message);
+      } else {
+        console.log(`Supabase auth link sent to ${email}`);
+      }
+    } catch (err) {
+      console.warn('Supabase auth link exception:', err);
+    }
+  }
+}
+
+// Universal function to sync user into both Server Database and Supabase Database
+export async function syncUserToBothDatabases(userData: {
+  id?: string;
+  email: string;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
+  provider?: string;
+}) {
+  // 1. Sync to Server DB
+  try {
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData)
+    });
+  } catch (err) {
+    console.warn('Failed to sync user to server DB:', err);
+  }
+
+  // 2. Sync to Supabase DB
+  if (isSupabaseConfigured()) {
+    await saveSupabaseUserRecord(userData);
+  }
+}
+

@@ -539,10 +539,6 @@ export default function HomeHub({
           </div>
 
           <div className="space-y-3 max-w-lg">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] font-extrabold uppercase tracking-widest">
-              <Info className="w-3.5 h-3.5" />
-              <span>Database Empty — Tools Locked</span>
-            </div>
             <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight">
               No any videos yet-upload first video to open magic tools!
             </h2>
@@ -1390,6 +1386,16 @@ export default function HomeHub({
 
         </div>
       ))}
+
+      {/* PREVIEW VERSION BADGE */}
+      <div className="mt-12 mb-6 pt-6 border-t border-white/5 flex flex-col items-center justify-center text-center space-y-2 max-w-xl mx-auto px-4">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-bold tracking-wide shadow-sm">
+          <span>🚧 Preview Version</span>
+        </div>
+        <p className="text-xs text-slate-400 leading-relaxed max-w-md">
+          SoftView is currently in active development. Features, design, and functionality may change as we continue building the platform.
+        </p>
+      </div>
 
       {/* ======================================================== */}
       {/* OVERLAY MODAL: EXECUTIVE AI SUMMARIZATION */}

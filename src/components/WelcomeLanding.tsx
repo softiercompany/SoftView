@@ -29,7 +29,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   startCustomGoogleAuth, 
   startCustomGithubAuth, 
-  startCustomDiscordAuth 
+  startCustomDiscordAuth,
+  sendSupabaseAuthLink 
 } from '../lib/supabase';
 import { 
   LANGUAGES, 
@@ -41,10 +42,15 @@ import {
 } from '../lib/languages';
 
 interface WelcomeLandingProps {
-  onSignIn: (userEmailOrName?: string) => void;
+  onSignIn: (
+    userEmailOrName?: string, 
+    extraData?: { email?: string; avatarUrl?: string; provider?: 'google' | 'github' | 'discord' | 'email'; username?: string }
+  ) => void;
+  onStartSignUp?: (provider?: 'google' | 'github' | 'discord' | 'email') => void;
+  onNavigateToSended?: (email: string) => void;
 }
 
-export default function WelcomeLanding({ onSignIn }: WelcomeLandingProps) {
+export default function WelcomeLanding({ onSignIn, onStartSignUp, onNavigateToSended }: WelcomeLandingProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [emailOrUser, setEmailOrUser] = useState('');
   const [password, setPassword] = useState('');
@@ -81,12 +87,19 @@ export default function WelcomeLanding({ onSignIn }: WelcomeLandingProps) {
     const handleOAuthMessage = (event: MessageEvent) => {
       const type = event.data?.type;
       if (type && type.startsWith('SOFTVIEW_CUSTOM_') && event.data?.payload) {
-        const user = event.data.payload.user;
-        const userName = user?.name || user?.email || 'Authenticated User';
-        setToastMessage(`Signed in as ${userName}! Redirecting...`);
+        const user = event.data.payload.user || {};
+        const userName = user.name || user.email || 'Authenticated User';
+        const provider: 'google' | 'github' | 'discord' = type.includes('GOOGLE') ? 'google' : type.includes('GITHUB') ? 'github' : 'discord';
+        
+        setToastMessage(`Signed in as ${userName}! Redirecting to profile setup...`);
         setTimeout(() => {
-          onSignIn(userName);
-        }, 800);
+          onSignIn(userName, {
+            email: user.email,
+            avatarUrl: user.picture || user.avatar_url,
+            provider,
+            username: user.username
+          });
+        }, 600);
       }
     };
 
@@ -165,10 +178,25 @@ export default function WelcomeLanding({ onSignIn }: WelcomeLandingProps) {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const nameToPass = isSignUp ? (fullName || 'Aslbek') : (emailOrUser.split('@')[0] || 'Aslbek');
-    onSignIn(nameToPass);
+    if (!emailOrUser) return;
+    const userEmail = emailOrUser.includes('@') ? emailOrUser : `${emailOrUser}@gmail.com`;
+    const nameToPass = isSignUp ? (fullName || userEmail.split('@')[0]) : (emailOrUser.split('@')[0]);
+
+    // Send email login/signup link via Supabase Auth & sync user to databases
+    await sendSupabaseAuthLink(userEmail, nameToPass);
+
+    // Route to /sended page
+    if (onNavigateToSended) {
+      onNavigateToSended(userEmail);
+    } else {
+      onSignIn(nameToPass, {
+        email: userEmail,
+        provider: 'email',
+        username: nameToPass
+      });
+    }
   };
 
   return (

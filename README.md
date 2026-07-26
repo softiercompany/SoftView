@@ -72,101 +72,16 @@ To fix the `400: redirect_uri_mismatch` error in Google OAuth:
    - `https://ais-dev-acfn73brvntt6gswmsnwhd-676297479340.asia-southeast1.run.app`
 5. Save changes. Note that Google OAuth changes may take 1-5 minutes to propagate.
 
-## 🗄️ Supabase Database Setup (Resolving 404 Missing Table Errors)
+## 🗄️ Supabase Database Setup (100% Full Platform Configuration)
 
-If you see `404 (Not Found)` or `Could not find the table 'public.videos'` in your browser console, it means your Supabase project database needs the initial table schema.
+The repository includes a complete, production-grade Supabase configuration script in **[`supabase.sql`](./supabase.sql)**.
 
-Execute the following SQL in your **[Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql)**:
+To set up Supabase in 1 step:
+1. Open your **[Supabase Dashboard SQL Editor](https://supabase.com/dashboard/project/_/sql/new)**.
+2. Copy and paste the entire contents of **`supabase.sql`**.
+3. Click **Run**.
 
-```sql
--- 1. Create Users Table
-CREATE TABLE IF NOT EXISTS public.users (
-  id TEXT PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  name TEXT,
-  avatar_url TEXT,
-  role TEXT DEFAULT 'user',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 2. Create User Profiles Table
-CREATE TABLE IF NOT EXISTS public.user_profiles (
-  id TEXT PRIMARY KEY DEFAULT 'default-user',
-  user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
-  name TEXT DEFAULT 'Aslbek',
-  level INT DEFAULT 12,
-  xp INT DEFAULT 620,
-  xp_next_level INT DEFAULT 1000,
-  avatar_url TEXT,
-  is_premium BOOLEAN DEFAULT false,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 3. Create Videos Table
-CREATE TABLE IF NOT EXISTS public.videos (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT,
-  category TEXT DEFAULT 'discover',
-  cover_url TEXT,
-  duration TEXT DEFAULT '10:00',
-  views TEXT DEFAULT '0 views',
-  upload_date TEXT DEFAULT 'Just now',
-  creator TEXT DEFAULT 'Anonymous',
-  creator_verified BOOLEAN DEFAULT false,
-  progress INT DEFAULT 0,
-  is_live BOOLEAN DEFAULT false,
-  video_url TEXT,
-  comments JSONB DEFAULT '[]'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 4. Create Watch History Table
-CREATE TABLE IF NOT EXISTS public.watch_history (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id TEXT DEFAULT 'default-user',
-  video_id TEXT REFERENCES public.videos(id) ON DELETE CASCADE,
-  watched_at TIMESTAMPTZ DEFAULT NOW(),
-  progress_seconds INT DEFAULT 0
-);
-
--- 5. Create Saved Videos Table
-CREATE TABLE IF NOT EXISTS public.saved_videos (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id TEXT DEFAULT 'default-user',
-  video_id TEXT REFERENCES public.videos(id) ON DELETE CASCADE,
-  saved_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 6. Create Learning Paths Table
-CREATE TABLE IF NOT EXISTS public.learning_paths (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT,
-  category TEXT,
-  xp_reward INT DEFAULT 100,
-  steps JSONB DEFAULT '[]'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Enable RLS Policies
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.videos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.watch_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.saved_videos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.learning_paths ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow public all on users" ON public.users FOR ALL USING (true);
-CREATE POLICY "Allow public all on user_profiles" ON public.user_profiles FOR ALL USING (true);
-CREATE POLICY "Allow public read on videos" ON public.videos FOR SELECT USING (true);
-CREATE POLICY "Allow public insert on videos" ON public.videos FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update on videos" ON public.videos FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete on videos" ON public.videos FOR DELETE USING (true);
-CREATE POLICY "Allow public all on watch_history" ON public.watch_history FOR ALL USING (true);
-CREATE POLICY "Allow public all on saved_videos" ON public.saved_videos FOR ALL USING (true);
-CREATE POLICY "Allow public all on learning_paths" ON public.learning_paths FOR ALL USING (true);
-```
+This will automatically create all tables (`users`, `user_profiles`, `videos`, `watch_history`, `saved_videos`, `learning_paths`, `ai_picks`), create RLS policies, set up storage buckets, and configure the automated Supabase Auth trigger function (`auth.users` -> `public.users` sync).
 
 ## ⏰ GitHub Actions Scheduled Crons (Trends & Streaks Reload)
 
